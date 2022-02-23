@@ -70,16 +70,7 @@ def get_data(datapath, dataset, num_train):
 
 
 def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimizer = None):
-    """
-    Train a model on CIFAR-10 using the PyTorch Module API.
-    
-    Inputs:
-    - model: A PyTorch Module giving the model to train.
-    - optimizer: An Optimizer object we will use to train the model
-    - epochs: (Optional) A Python integer giving the number of epochs to train for
-    
-    Returns: Nothing, but prints model accuracies during training.
-    """
+
     device = pars.device
     dtype = torch.float32
     train_dat = data[0]
@@ -229,7 +220,6 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None)
             classifier.load_state_dict(pars.loadclf)
         print(net)
         print(classifier)
-        
         print(head)
 
         val_loss = []
