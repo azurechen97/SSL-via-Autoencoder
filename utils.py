@@ -11,6 +11,8 @@ from pars import PARS
 from setup_net import *
 from loss import *
 
+import matplotlib.pyplot as plt
+
 
 def get_BYOL_transforms(is_first=True):
     transforms = torch.nn.Sequential(
@@ -163,7 +165,7 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
             #     model.state_dict(), expdir +'epochs_{}.pt'.format(e)
             # )
 
-def train_model_ae(data, fix, model, decoder, pars, ep_loss, ep_acc, criterion_re=None, criterion_sim=None, optimizer = None):
+def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, criterion_sim=None, optimizer = None, print_image = False):
 
     device = pars.device
     dtype = torch.float32
@@ -199,6 +201,8 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, ep_acc, criterion_r
     with torch.autograd.set_detect_anomaly(True):
         for e in range(n_epochs):
             running_loss = 0
+            running_loss_re = 0
+            running_loss_sim = 0
             start_time = time.time()
 
             for j in np.arange(0, len(train_tar), pars.batch_size):
@@ -224,20 +228,34 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, ep_acc, criterion_r
 
                 loss_re = criterion_re(x_re,x_new)
                 loss_sim = criterion_sim(scores)
-                loss = loss_sim+pars.lam*loss_re
+                
+                loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
                 # loss = loss_sim
 
                 running_loss += loss.item()
+                running_loss_re += loss_re.item()
+                running_loss_sim += loss_sim.item()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
             end_time = time.time()-start_time
             running_loss /= (len(train_tar)/pars.batch_size)
+            running_loss_re /= (len(train_tar)/pars.batch_size)
+            running_loss_sim /= (len(train_tar)/pars.batch_size)
             ep_loss.append(running_loss)
 
             print('Epoch %d, loss = %.4f, time: %0.4f' %
                     (e, running_loss, end_time))
+            print('reconstruction loss = %.4f, similarity loss: %0.4f' %
+                    (running_loss_re, running_loss_sim))
+            if print_image:
+                img0 = x_new[0,:,:,:].cpu().numpy()
+                img0 = np.moveaxis(img0, 0, -1)
+                plt.imshow(img0)
+                img1 = x_re[0, :, :, :].cpu().numpy()
+                img1 = np.moveaxis(img1, 0, -1)
+                plt.imshow(img1)
             
 
 def check_accuracy(dat, tar, fix, model, pars):
@@ -264,7 +282,7 @@ def check_accuracy(dat, tar, fix, model, pars):
     return acc
 
 def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None):
-    print(pars)
+    # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/"+pars.loss+"/"
     EXP_NAME = '{}_{}_{}_LR_{}_Epochs_{}_CLF_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs,
@@ -343,8 +361,8 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None)
     np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
 
 
-def train_unsupervised_ae(pars, criterion=None, clf_criterion=None, optimizer=None):
-    print(pars)
+def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, optimizer=None, print_image=False):
+    # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/AE/"
     EXP_NAME = '{}_{}_{}_LR_{}_Epochs_{}_CLF_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs,
@@ -391,8 +409,7 @@ def train_unsupervised_ae(pars, criterion=None, clf_criterion=None, optimizer=No
             head)
         pars.train_unsupervised = True
 
-        train_model_ae(data, fix, model, decoder, pars, head_loss,
-                    None, criterion, optimizer)
+        train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, print_image)
 
         print('Train Classifier')
         pars.train_unsupervised = False
