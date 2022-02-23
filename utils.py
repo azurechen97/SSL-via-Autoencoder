@@ -224,7 +224,6 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, ep_acc, criterion_r
 
                 loss_re = criterion_re(x_re,x_new)
                 loss_sim = criterion_sim(scores)
-                print(loss_re,loss_sim)
                 loss = loss_sim+pars.lam*loss_re
                 # loss = loss_sim
 
