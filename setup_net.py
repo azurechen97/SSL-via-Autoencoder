@@ -59,10 +59,22 @@ def setup_net(pars):
     if pars.auxnonlinear == 'tanh':
         auxhead.add_module('activation', nn.Tanh())
 
-    classifier.add_module('aux%d'%i, aux)
+    classifier.add_module('aux', aux)
 
-    head.add_module('auxhead%d'%i, auxhead)
+    head.add_module('auxhead', auxhead)
 
 
     return net, classifier, head
 
+
+def setup_decoder(pars):
+    decoder = nn.Sequential()
+
+    auxdecoder = nn.Sequential()
+    auxdecoder.add_module('fc', nn.Linear(
+        pars.headsize, 8192))
+    auxdecoder.add_module('unflatten', nn.Unflatten(8192,(8,32,32)))
+    auxdecoder.add_module('deconv', nn.ConvTranspose2d(8,3,3, padding=1))
+
+    decoder.add_module('auxdecoder', auxdecoder)
+    return decoder
