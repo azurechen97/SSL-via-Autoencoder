@@ -8,7 +8,7 @@ import time
 import os
 
 from pars import PARS
-from setup_net import setup_net
+from setup_net import *
 from loss import *
 
 
@@ -101,10 +101,10 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
         optimizer = torch.optim.Adam(params, lr=lr)
     print(optimizer)
 
-    if (pars.unsupervised) and (not pars.train_unsupervised):
-        n_epochs = pars.clf_epochs
-    else:
+    if pars.train_unsupervised:
         n_epochs = pars.epochs
+    else:
+        n_epochs = pars.clf_epochs
 
     with torch.autograd.set_detect_anomaly(True):
         for e in range(n_epochs):
@@ -131,8 +131,8 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                         train_tar[j:j+pars.batch_size]).to(device=device, dtype=torch.long)
 
                 with torch.no_grad():
-                    x1 = fix(x)
-                scores = model(x1)
+                    x_new = fix(x)
+                scores = model(x_new)
 
                 if pars.train_unsupervised:
                     loss = criterion(scores)
@@ -163,6 +163,83 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
             #     model.state_dict(), expdir +'epochs_{}.pt'.format(e)
             # )
 
+def train_model_ae(data, fix, model, decoder, pars, ep_loss, ep_acc, criterion_re=None, criterion_sim=None, optimizer = None):
+
+    device = pars.device
+    dtype = torch.float32
+    train_dat = data[0]
+    train_tar = data[1]
+    val_dat = data[2]
+    val_tar = data[3]
+
+    print(fix)
+    print(model)
+    print(decoder)
+
+    fix = fix.to(device=device)
+    model = model.to(device=device)  # move the model parameters to CPU/GPU
+    decoder = decoder.to(device=device)
+
+    lr = pars.LR
+    if not criterion_re:
+        criterion_re = nn.MSELoss()
+    if not criterion_sim:
+        criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
+    params = list(fix.parameters())+list(model.parameters())+list(decoder.parameters())
+
+    print(criterion_re)
+    print(criterion_sim)
+
+    if not optimizer:
+        optimizer = torch.optim.Adam(params, lr=lr)
+    print(optimizer)
+
+    n_epochs = pars.epochs
+
+    with torch.autograd.set_detect_anomaly(True):
+        for e in range(n_epochs):
+            running_loss = 0
+            start_time = time.time()
+
+            for j in np.arange(0, len(train_tar), pars.batch_size):
+                model.train()  # put model to training mode
+                decoder.train()
+                # move to device, e.g. GPU
+                x = torch.from_numpy(
+                    train_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
+
+                img = x * 0.5 + 0.5
+
+                transform1 = get_BYOL_transforms(True)
+                transform2 = get_BYOL_transforms(False)
+                x1 = transform1(img)
+                x2 = transform2(img)
+                
+                x = torch.cat((x1, x2), dim=0)
+
+                with torch.no_grad():
+                    x_new = fix(x)
+                scores = model(x_new)
+                x_re = decoder(scores)
+
+                loss_re = criterion_re(x_re,x_new)
+                loss_sim = criterion_sim(scores)
+                print(loss_re,loss_sim)
+                loss = loss_sim+pars.lam*loss_re
+                # loss = loss_sim
+
+                running_loss += loss.item()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            end_time = time.time()-start_time
+            running_loss /= (len(train_tar)/pars.batch_size)
+            ep_loss.append(running_loss)
+
+            print('Epoch %d, loss = %.4f, time: %0.4f' %
+                    (e, running_loss, end_time))
+            
 
 def check_accuracy(dat, tar, fix, model, pars):
 
@@ -178,8 +255,8 @@ def check_accuracy(dat, tar, fix, model, pars):
                 dat[j:j+pars.batch_size]).to(device=device, dtype=torch.float32)
             y = torch.from_numpy(
                 tar[j:j+pars.batch_size]).to(device=device, dtype=torch.long)
-            x1 = fix(x)
-            scores = model(x1)
+            x_new = fix(x)
+            scores = model(x_new)
             _, preds = scores.max(1)
             num_correct += (preds == y).sum()
             num_samples += preds.size(0)
@@ -194,7 +271,7 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None)
     EXP_NAME = '{}_{}_{}_LR_{}_Epochs_{}_CLF_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs,
         pars.clf_dataset, pars.clf_opt, pars.clf_lr, pars.clf_epochs)
     if pars.loss == 'BarlowTwins':
-        EXP_NAME += '_lambda_'+str(pars.BTlambda)
+        EXP_NAME += '_lam_'+str(pars.lam)
     
     if not os.path.exists(expdir):
         os.makedirs(expdir)
@@ -202,7 +279,7 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None)
     print(expdir)
     print(EXP_NAME)
 
-    pars.train_unsupervised = pars.unsupervised
+    pars.train_unsupervised = True
 
     dtype = torch.float32
 
@@ -246,6 +323,88 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
         lw_test_acc.append(test_acc)
         
+
+        np.save(expdir+'head_loss_rep_{}_'.format(rep+1) +
+                EXP_NAME, head_loss)
+        np.save(expdir+'loss_rep_{}_'.format(rep+1) + EXP_NAME, val_loss)
+        np.save(expdir+'val.acc_rep_{}_'.format(rep+1) + EXP_NAME, val_acc)
+        np.save(expdir+'te.acc_rep_{}_'.format(rep+1) + EXP_NAME, lw_test_acc)
+
+        if pars.epochs:
+            torch.save(net.state_dict(), expdir +
+                       'net_rep_{}_'.format(rep+1) + EXP_NAME + '.pt')
+        torch.save(classifier.state_dict(), expdir +
+                   'clf_rep_{}_'.format(rep+1) + EXP_NAME + '.pt', )
+
+        test_acc_all.append(lw_test_acc)
+
+    print('\nAll reps test.acc:')
+    for acc in test_acc_all:
+        print(acc)
+    np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
+
+
+def train_unsupervised_ae(pars, criterion=None, clf_criterion=None, optimizer=None):
+    print(pars)
+
+    expdir = pars.savepath+pars.architecture+"/AE/"
+    EXP_NAME = '{}_{}_{}_LR_{}_Epochs_{}_CLF_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs,
+        pars.clf_dataset, pars.clf_opt, pars.clf_lr, pars.clf_epochs)
+    EXP_NAME += '_lam_'+str(pars.lam)
+
+    if not os.path.exists(expdir):
+        os.makedirs(expdir)
+
+    print(expdir)
+    print(EXP_NAME)
+
+    pars.train_unsupervised = True
+
+    dtype = torch.float32
+
+    data = get_data(pars.datapath, pars.dataset, num_train=500000)
+    clf_data = get_data(pars.datapath, pars.clf_dataset, num_train=45000)
+
+    test_acc_all = []
+    for rep in range(pars.repeat):
+        print("\nRep {}".format(rep+1))
+
+        net, classifier, head = setup_net(pars)
+        decoder = setup_decoder(pars)
+        if pars.loadnet:
+            net.load_state_dict(pars.loadnet)
+        if pars.loadclf:
+            classifier.load_state_dict(pars.loadclf)
+        print(net)
+        print(classifier)
+        print(head)
+        print(decoder)
+
+        val_loss = []
+        val_acc = []
+        lw_test_acc = []
+
+        head_loss = []
+
+        fix = nn.Sequential()
+        model = nn.Sequential(
+            net,
+            head)
+        pars.train_unsupervised = True
+
+        train_model_ae(data, fix, model, decoder, pars, head_loss,
+                    None, criterion, optimizer)
+
+        print('Train Classifier')
+        pars.train_unsupervised = False
+        print(net)
+        print(classifier)
+        train_model(clf_data, net, classifier, pars, val_loss,
+                    val_acc, clf_criterion, optimizer)
+        test_acc = check_accuracy(
+            clf_data[4], clf_data[5], net, classifier, pars)
+        print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
+        lw_test_acc.append(test_acc)
 
         np.save(expdir+'head_loss_rep_{}_'.format(rep+1) +
                 EXP_NAME, head_loss)
