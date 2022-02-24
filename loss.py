@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 
 class BarlowTwinsLoss(torch.nn.Module):
     def __init__(self, batch_size, lam=0.5, device='cpu'):
@@ -25,10 +24,11 @@ class BarlowTwinsLoss(torch.nn.Module):
         return loss
 
 class TwinMSELoss(torch.nn.Module):
-    def __init__(self, batch_size, device='cpu'):
+    def __init__(self, batch_size, device='cpu', reduction = "mean"):
         super(TwinMSELoss, self).__init__()
         self.device = device
         self.batch_size = batch_size
+        self.reduction = reduction
 
     def forward(self, output):
         h1, h2 = torch.split(output, self.batch_size)
@@ -36,7 +36,22 @@ class TwinMSELoss(torch.nn.Module):
         h1 = (h1-h1.mean(0, keepdim=True))/h1.std(0, keepdim=True)
         h2 = (h2-h2.mean(0, keepdim=True))/h2.std(0, keepdim=True)
 
-        loss = torch.nn.functional.mse_loss(h1,h2)
+        loss = torch.nn.functional.mse_loss(h1,h2, reduction = self.reduction)
+
+        return loss
+
+class MultiTaskLoss(torch.nn.Module):
+    def __init__(self, batch_size, device='cpu'):
+        super(MultiTaskLoss, self).__init__()
+        self.device = device
+        self.batch_size = batch_size
+        self.logsigma = torch.nn.Parameter(torch.zeros(2))
+
+    def forward(self, loss_re, loss_sim):
+
+        loss = 0.5*torch.Tensor([loss_re, loss_sim]) / \
+            torch.exp(2*self.logsigma) + self.logsigma
+        loss = loss.sum()
 
         return loss
 

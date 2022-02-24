@@ -198,8 +198,6 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
     dtype = torch.float32
     train_dat = data[0]
     train_tar = data[1]
-    val_dat = data[2]
-    val_tar = data[3]
 
     print(fix)
     print(model)
@@ -216,8 +214,8 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
         criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
     params = list(fix.parameters())+list(model.parameters())+list(decoder.parameters())
     if pars.lam == -1:
-        sigma = torch.ones(2, requires_grad=True)
-        params += [sigma]
+        criterion_mtl = MultiTaskLoss(pars.batch_size, pars.device)
+        params += list(criterion_mtl.parameters())
 
     print(criterion_re)
     print(criterion_sim)
@@ -242,6 +240,9 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
             for j in np.arange(0, len(train_tar), pars.batch_size):
                 model.train()  # put model to training mode
                 decoder.train()
+                if pars.lam == -1:
+                    criterion_mtl.train()
+
                 # move to device, e.g. GPU
                 x = torch.from_numpy(
                     train_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
@@ -264,8 +265,7 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 loss_sim = criterion_sim(scores)
                 
                 if pars.lam == -1: # multi-task loss
-                    loss = 0.5 * torch.Tensor([loss_re,loss_sim])/sigma**2
-                    loss = loss.sum() + torch.log(sigma).sum()
+                    loss = criterion_mtl(loss_re, loss_sim)
                 else:
                     loss= (1-pars.lam)*loss_sim+pars.lam*loss_re
                 # loss = loss_sim
@@ -292,7 +292,7 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                     (running_loss_re, running_loss_sim))
             if pars.lam == -1:
-                print(sigma.detach().numpy())
+                print(list(criterion_mtl.parameters())[0])
             if vis is not None and e % 5 == 4:
                 ind = np.random.choice(pars.batch_size)
                 # vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
@@ -514,7 +514,8 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
 def proposed_lr(lr0, lr1, i, epochs):
     return lr0*(lr1/lr0)**(i/epochs)
 
-def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
+
+def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, reduction="mean", vis=None):
     # print(pars)
 
     pars.train_unsupervised = True
@@ -542,9 +543,9 @@ def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, 
             head)
         pars.train_unsupervised = True
 
-        find_lr_model_ae(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, vis)
+        find_lr_model_ae(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, reduction, vis)
 
-def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
+def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, reduction="mean", vis=None):
 
     device = pars.device
     dtype = torch.float32
@@ -561,14 +562,14 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
 
     lr = lr0
     if not criterion_re:
-        criterion_re = nn.MSELoss()
+        criterion_re = nn.MSELoss(reduction=reduction)
     if not criterion_sim:
-        criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
+        criterion_sim = TwinMSELoss(pars.batch_size, pars.device, reduction=reduction)
     params = list(fix.parameters())+list(model.parameters()) + \
         list(decoder.parameters())
     if pars.lam == -1:
-        sigma = torch.ones(2, requires_grad=True)
-        params += [sigma]
+        criterion_mtl = MultiTaskLoss(pars.batch_size, pars.device)
+        params += list(criterion_mtl.parameters())
 
     print(criterion_re)
     print(criterion_sim)
@@ -594,6 +595,8 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
 
                 model.train()  # put model to training mode
                 decoder.train()
+                if pars.lam == -1:
+                    criterion_mtl.train()
                 # move to device, e.g. GPU
                 x = torch.from_numpy(
                     train_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
@@ -616,8 +619,7 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
                 loss_sim = criterion_sim(scores)
 
                 if pars.lam == -1:  # multi-task loss
-                    loss = 0.5 * torch.Tensor([loss_re, loss_sim])/sigma**2
-                    loss = loss.sum() + torch.log(sigma).sum()
+                    loss = criterion_mtl(loss_re, loss_sim)
                 else:
                     loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
 
@@ -643,7 +645,7 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                   (running_loss_re, running_loss_sim))
             if pars.lam == -1:
-                print(sigma.detach().numpy())
+                print(list(criterion_mtl.parameters())[0])
             if vis is not None and e % 5 == 4:
                 vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
                             opts=dict(title="lr",
