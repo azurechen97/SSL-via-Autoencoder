@@ -23,28 +23,6 @@ class BarlowTwinsLoss(torch.nn.Module):
 
         return loss
 
-class BarlowTwinsLoss(torch.nn.Module):
-    def __init__(self, batch_size, lam=0.5, device='cpu'):
-        super(BarlowTwinsLoss, self).__init__()
-        self.device = device
-        self.batch_size = batch_size
-        self.lam = lam
-
-    def forward(self, output):
-        h1, h2 = torch.split(output, self.batch_size)
-        # normalize along the batch dimension
-        h1 = (h1-h1.mean(0, keepdim=True))/h1.std(0, keepdim=True)
-        h2 = (h2-h2.mean(0, keepdim=True))/h2.std(0, keepdim=True)
-        N, D = h1.shape
-
-        C = torch.mm(h1.transpose(0, 1), h2)/(N-1)
-
-        mask = torch.eye(D, dtype=torch.bool).to(self.device)
-        C_diff = (C - mask.double()).pow(2)
-        C_diff[~mask] *= self.lam
-        loss = C_diff.sum()
-
-        return loss
 class TwinMSELoss(torch.nn.Module):
     def __init__(self, batch_size, device='cpu'):
         super(TwinMSELoss, self).__init__()

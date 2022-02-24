@@ -215,6 +215,9 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
     if not criterion_sim:
         criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
     params = list(fix.parameters())+list(model.parameters())+list(decoder.parameters())
+    if pars.lam == -1:
+        sigma = nn.Parameter(torch.ones(2))
+        params += [sigma]
 
     print(criterion_re)
     print(criterion_sim)
@@ -261,7 +264,6 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 loss_sim = criterion_sim(scores)
                 
                 if pars.lam == -1: # multi-task loss
-                    sigma = nn.Parameter(torch.ones(2))
                     loss = 0.5 * torch.Tensor([loss_re,loss_sim])/sigma**2
                     loss = loss.sum() + torch.log(sigma).sum()
                 else:
@@ -290,7 +292,7 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                     (running_loss_re, running_loss_sim))
             if pars.lam == -1:
-                print(sigma.item())
+                print(sigma.detach().numpy())
             if vis is not None and e % 5 == 4:
                 ind = np.random.choice(pars.batch_size)
                 # vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
@@ -564,6 +566,9 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
         criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
     params = list(fix.parameters())+list(model.parameters()) + \
         list(decoder.parameters())
+    if pars.lam == -1:
+        sigma = torch.ones(2, requires_grad=True)
+        params += [sigma]
 
     print(criterion_re)
     print(criterion_sim)
@@ -611,7 +616,6 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
                 loss_sim = criterion_sim(scores)
 
                 if pars.lam == -1:  # multi-task loss
-                    sigma = nn.Parameter(torch.ones(2))
                     loss = 0.5 * torch.Tensor([loss_re, loss_sim])/sigma**2
                     loss = loss.sum() + torch.log(sigma).sum()
                 else:
@@ -639,7 +643,7 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                   (running_loss_re, running_loss_sim))
             if pars.lam == -1:
-                print(sigma.item())
+                print(sigma.detach().numpy())
             if vis is not None and e % 5 == 4:
                 vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
                             opts=dict(title="lr",
