@@ -73,8 +73,10 @@ def setup_decoder(pars):
     auxdecoder = nn.Sequential()
     auxdecoder.add_module('fc', nn.Linear(
         pars.headsize, 8192))
+    auxdecoder.add_module('relu', nn.ReLU())    
     auxdecoder.add_module('unflatten', nn.Unflatten(1,(8,32,32)))
     auxdecoder.add_module('deconv', nn.ConvTranspose2d(8,3,3, padding=1))
+    auxdecoder.add_module('sigmoid', nn.Sigmoid())
 
     decoder.add_module('auxdecoder', auxdecoder)
     return decoder

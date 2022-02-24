@@ -1,0 +1,54 @@
+<!--
+Copyright 2017-present, Facebook, Inc.
+All rights reserved.
+This source code is licensed under the license found in the
+LICENSE file in the root directory of this source tree.
+-->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="shortcut icon" href="favicon.png">
+<!-- Bootstrap & jQuery -->
+<link rel="stylesheet" href=/static/css/bootstrap.min.css?v=e8c5daf01eae68ed7c1e277a6e544c7ad108a0fa877fb531d6d9f2210769b7da88e4e002c7b0be3b72154ebf7cbf01a795c8342ce2dad368bd6351e956195f8b>
+<script src=/static/js/jquery.min.js?v=53a2b560b20551672fbb0e6e72632d4fd1c7e2dd2ecf7337ebaaab179cb8be7c87e9d803ce7765706bc7fcbcf993c34587cd1237de5a279aea19911d69067b65></script>
+<script src=/static/js/bootstrap.min.js?v=8b3b64a1bb2f9e329f02d4cd7479065630184ebaed942ee61a9ff9e1ce34c28c0eecb854458977815cf3704a8697fa8a5d096d2761f032b74b70d51da3e37f45></script>
+<link rel="stylesheet" href=/static/css/react-resizable-styles.css?v=a5ba57f67c45b93ccf0e85aee677363a9267ca450452524278aa2538934caa2d425b3ad9de535608f5983729ff25fb9edc98b796cd639d6e4633e5d688c59309>
+<link rel="stylesheet" href=/static/css/react-grid-layout-styles.css?v=088afb33aca5476eb6b9bac95c72316c59771cea8c53b9f4c6429bb3b0ae728e6518b45e83855af2e213f9e734959da931f042142fe62aec80b6c0e0bcb7017f>
+<!-- Other deps -->
+<script src=/static/js/react-react.min.js?v=52fa608d7e6bb1982d7ba2364e0dd363219f5733177cc2794330878e79ba97bcf5d01a09f23183ff948745c92da50d60d8c8daf406832720f3912bc85fe232f3></script>
+<script src=/static/js/react-dom.min.js?v=57dfe873909119995858f3727fc88b77c35ae618be1158910bbe1128c4b2d1407e047dd903724452c6d087793f485dda3ca6e93485298817ae8eccf219bffa6b></script>
+<script src=/static/js/layout_bin_packer.js?v=bd0a340e63783f93e70652b477fea0efcb7550c7aa9ddae85e51a6e1a3ca94230cf7661f2fc067a612a3467662cd0ae4af99ef1134afe7768fe02ffa678f1e0a></script>
+<!-- Mathjax -->
+<script type="text/javascript" async src=/static/js/mathjax-MathJax.js?v=b4e6afe70d4e8efb1227378f46db76b903c5c01a07b75559714abc97c9e6e76f382c4284f45489050af2ccc0731f16393f4cd174da847292c8455605360bb58f></script>
+<!-- Plotly -->
+<script src=/static/js/plotly-plotly.min.js?v=ef030b67128316f45e2163d4cc17dc10ab2e3ab883504716915d9b347576fed4149a8663d9e2e9910385ee705bb70546f16ad2979ad337cedcaa74bb65e961cd></script>
+<!-- Custom styles for this template -->
+<script>
+// TODO: this is not great. Should probably be an endpoint with a JSON
+// response or the first thing the socket sends back.
+var ENV_LIST = [
+
+'lam_1',
+
+'main',
+
+];
+var ACTIVE_ENV = '';
+var USER = 'jhcax';
+var USE_POLLING = ('False' == 'True');
+// Plotly setup
+window.PLOTLYENV = window.PLOTLYENV || {};
+window.PLOTLYENV.BASE_URL = 'https://plot.ly';
+</script>
+<script src=/static/js/main.js?v=512fa4c894cc296b44e8ec1c28524a962a0f013eaeb1cba03250e343049fb3ec11a36372fb43eeac66a88e08212644a4aae16c2f5d213db6a80457607cb1f8ac></script>
+<link rel="stylesheet" href=/static/css/style.css?v=f043de30e08d15702b92312329ee98101e381a0b45b522c7dd26449e3124533398cfc8cae6f7d8095f3f701bde44f9561526c8d653e82e82415504765aa06034>
+<title>visdom</title>
+<!-- <link rel="icon" href="http://example.com/favicon.png"> -->
+</head>
+<body>
+<noscript>JS is required</noscript>
+<div id="app"></div>
+</body>
+</html>

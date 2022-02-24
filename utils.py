@@ -160,15 +160,21 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                 ep_acc.append(acc)
             
             if vis is not None and e % 5 == 4:
-                vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
-                         opts=dict(title="loss",
-                                   xlabel="epochs",
-                                   ylabel="loss"))
-                vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss (log)", name="loss",
-                         opts=dict(title="loss (log)",
-                                   xlabel="epochs",
-                                   ylabel="loss",
-                                   ytype="log"))
+                if pars.train_unsupervised:
+                    s = ""
+                else:
+                    s = "clf "
+
+                vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win=s+"loss", name="loss",
+                        opts=dict(title=s+"loss",
+                                xlabel="epochs",
+                                ylabel="loss"))
+                vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win=s+"loss (log)", name="loss",
+                        opts=dict(title=s+"loss (log)",
+                                xlabel="epochs",
+                                ylabel="loss",
+                                ytype="log"))
+
 
             # expdir =pars.savepath + "checkpoint/"
             # if not os.path.exists(expdir):
