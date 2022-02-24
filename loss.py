@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 class BarlowTwinsLoss(torch.nn.Module):
     def __init__(self, batch_size, lam=0.5, device='cpu'):
