@@ -216,7 +216,7 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
         criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
     params = list(fix.parameters())+list(model.parameters())+list(decoder.parameters())
     if pars.lam == -1:
-        sigma = nn.Parameter(torch.ones(2))
+        sigma = torch.ones(2, requires_grad=True)
         params += [sigma]
 
     print(criterion_re)
