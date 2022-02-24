@@ -1,4 +1,3 @@
-from torch.utils.data import sampler
 import torchvision.datasets as dset
 import torchvision.transforms as TF
 import numpy as np
@@ -6,7 +5,6 @@ import torch
 from torch import nn
 import time
 import os
-
 
 from pars import PARS
 from setup_net import *
@@ -72,7 +70,7 @@ def get_data(datapath, dataset, num_train):
     return train_dat[:num_train], train_tar[:num_train], train_dat[num_train:], train_tar[num_train:], test_dat, test_tar
 
 
-def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimizer = None, vis=None, cosine_annealing = False):
+def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimizer = None, vis=None):
 
     device = pars.device
     dtype = torch.float32
@@ -102,9 +100,6 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
 
     if not optimizer:
         optimizer = torch.optim.Adam(params, lr=lr)
-    if cosine_annealing:
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=50)
     print(optimizer)
 
     if pars.train_unsupervised:
@@ -151,8 +146,6 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                if cosine_annealing:
-                    scheduler.step(e + j / len(train_tar))
 
             end_time = time.time()-start_time
             running_loss /= (len(train_tar)/pars.batch_size)
@@ -195,7 +188,7 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
             #     model.state_dict(), expdir +'epochs_{}.pt'.format(e)
             # )
 
-def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, criterion_sim=None, optimizer = None, vis=None, print_image = False, cosine_annealing = False):
+def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, criterion_sim=None, optimizer = None, vis=None):
 
     device = pars.device
     dtype = torch.float32
@@ -224,8 +217,6 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
 
     if not optimizer:
         optimizer = torch.optim.Adam(params, lr=lr)
-    if cosine_annealing:
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50)
     print(optimizer)
 
     n_epochs = pars.epochs
@@ -274,8 +265,6 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                if cosine_annealing:
-                    scheduler.step(e + j / len(train_tar))
 
             end_time = time.time()-start_time
             running_loss /= (len(train_tar)/pars.batch_size)
@@ -291,43 +280,34 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                     (e, running_loss, end_time))
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                     (running_loss_re, running_loss_sim))
-            if e % 5 == 4:
-                ind = np.random.choice(2*pars.batch_size)
-                if print_image:
-                    plt.figure(figsize=(16, 8))
-                    img0 = x_new[ind,:,:,:].cpu().numpy()
-                    img0 = np.moveaxis(img0, 0, -1)
-                    plt.subplot(121)
-                    plt.imshow(img0)
-                    img1 = x_re[ind, :, :, :].detach().cpu().numpy()
-                    img1 = np.moveaxis(img1, 0, -1)
-                    plt.subplot(122)
-                    plt.imshow(img1)
-                    plt.show()
-                
-                if vis is not None:
-                    vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
-                             opts=dict(title="lr",
-                                       xlabel="epochs",
-                                       ylabel="lr"))
-                    vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
-                            opts=dict(title="loss",
+            if vis is not None and e % 5 == 4:
+                ind = np.random.choice(pars.batch_size)
+                vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
+                            opts=dict(title="lr",
                                     xlabel="epochs",
-                                    ylabel="loss"))
-                    vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),  win="loss", update='append', name="reconstruction loss")
-                    vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),  win="loss", update='append', name="similarity loss")
-                    vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss (log)", name="loss",
-                            opts=dict(title="loss (log)",
-                                    xlabel="epochs",
-                                    ylabel="loss",
-                                    ytype = "log"))
-                    vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),  win="loss (log)",
-                            update='append', name="reconstruction loss")
-                    vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
-                            win="loss (log)", update='append', name="similarity loss")
-                    vis.image(x_new[ind, :, :, :], win="ori", opts=dict(caption="original image", store_history=True))
-                    vis.image(x_re[ind, :, :, :],
-                            win="recon", opts=dict(caption="reconstructed image", store_history=True))
+                                    ylabel="lr"))
+                vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
+                        opts=dict(title="loss",
+                                xlabel="epochs",
+                                ylabel="loss"))
+                vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),  win="loss", update='append', name="reconstruction loss")
+                vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),  win="loss", update='append', name="similarity loss")
+                vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss (log)", name="loss",
+                        opts=dict(title="loss (log)",
+                                xlabel="epochs",
+                                ylabel="loss",
+                                ytype = "log"))
+                vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),  win="loss (log)",
+                        update='append', name="reconstruction loss")
+                vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
+                        win="loss (log)", update='append', name="similarity loss")
+                vis.image(x_new[ind, :, :, :], win="ori 1", opts=dict(caption="original image 1", store_history=True))
+                vis.image(x_re[ind, :, :, :],
+                        win="recon 1", opts=dict(caption="reconstructed image 1", store_history=True))
+                vis.image(x_new[ind+pars.batch_size, :, :, :], win="ori 2", opts=dict(
+                    caption="original image 2", store_history=True))
+                vis.image(x_re[ind+pars.batch_size, :, :, :],
+                          win="recon 2", opts=dict(caption="reconstructed image 2", store_history=True))
             
 
 def check_accuracy(dat, tar, fix, model, pars):
@@ -354,7 +334,7 @@ def check_accuracy(dat, tar, fix, model, pars):
     return acc
 
 
-def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None, vis=None, cosine_annealing=False):
+def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None, vis=None):
     # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/"+pars.loss+"/"
@@ -401,13 +381,13 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
             head)
         pars.train_unsupervised = True
  
-        train_model(data, fix, model, pars, head_loss, None, criterion, optimizer,vis,cosine_annealing)
+        train_model(data, fix, model, pars, head_loss, None, criterion, optimizer,vis)
 
         print('Train Classifier')
         pars.train_unsupervised = False
         print(net)
         print(classifier)
-        train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis, False)
+        train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis)
         test_acc = check_accuracy(
             clf_data[4], clf_data[5], net, classifier, pars)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
@@ -434,7 +414,7 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
     np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
 
 
-def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, optimizer=None, vis=None, print_image=False,  cosine_annealing=False):
+def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, optimizer=None, vis=None):
     # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/AE/"
@@ -482,14 +462,14 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
             head)
         pars.train_unsupervised = True
 
-        train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, vis, print_image,cosine_annealing)
+        train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, vis)
 
         print('Train Classifier')
         pars.train_unsupervised = False
         print(net)
         print(classifier)
         train_model(clf_data, net, classifier, pars, val_loss,
-                    val_acc, clf_criterion, optimizer, vis, False)
+                    val_acc, clf_criterion, optimizer, vis)
         test_acc = check_accuracy(
             clf_data[4], clf_data[5], net, classifier, pars)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
@@ -515,16 +495,16 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
     np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
 
 
-def find_lr(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
+def proposed_lr(lr0, lr1, i, epochs):
+    return lr0*(lr1/lr0)**(i/epochs)
+
+def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
     # print(pars)
 
     pars.train_unsupervised = True
 
-    dtype = torch.float32
-
     data = get_data(pars.datapath, pars.dataset, num_train=500000)
 
-    test_acc_all = []
     for rep in range(pars.repeat):
         print("\nRep {}".format(rep+1))
 
@@ -546,13 +526,9 @@ def find_lr(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, opt
             head)
         pars.train_unsupervised = True
 
-        find_lr_model(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, vis)
+        find_lr_model_ae(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, vis)
 
-
-def proposed_lr(lr0, lr1, i, epochs):
-    return lr0*(lr1/lr0)**(-i/epochs)
-
-def find_lr_model(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
+def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
 
     device = pars.device
     dtype = torch.float32
@@ -644,26 +620,146 @@ def find_lr_model(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, 
                   (e, running_loss, end_time))
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                   (running_loss_re, running_loss_sim))
-            if e % 5 == 4:
-                if vis is not None:
-                    vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
-                             opts=dict(title="lr",
-                                       xlabel="epochs",
-                                       ylabel="lr"))
-                    vis.line(np.array(ep_loss), np.array(ep_lr),  win="loss_lr", name="loss",
-                             opts=dict(title="loss",
-                                       xlabel="lr",
-                                       ylabel="loss",
-                                       xtype="log"))
-                    vis.line(np.array(ep_loss_re), np.array(ep_lr),
-                             win="loss_lr", update='append', name="reconstruction loss")
-                    vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
-                             win="loss_lr", update='append', name="similarity loss")
-                    vvis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
-                              opts=dict(title="loss",
-                                        xlabel="epochs",
-                                        ylabel="loss"))
-                    vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),
-                             win="loss", update='append', name="reconstruction loss")
-                    vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
-                             win="loss", update='append', name="similarity loss")
+            if vis is not None and e % 5 == 4:
+                vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
+                            opts=dict(title="lr",
+                                    xlabel="epochs",
+                                    ylabel="lr"))
+                vis.line(np.array(ep_loss), np.array(ep_lr),  win="loss_lr", name="loss",
+                            opts=dict(title="loss",
+                                    xlabel="lr",
+                                    ylabel="loss",
+                                    xtype="log"))
+                # vis.line(np.array(ep_loss_re), np.array(ep_lr),
+                #          win="loss_lr", update='append', name="reconstruction loss")
+                # vis.line(np.array(ep_loss_sim), np.array(ep_lr),
+                #          win="loss_lr", update='append', name="similarity loss")
+                vis.line(np.array(ep_loss), np.array(ep_lr),  win="logloss_lr", name="loss",
+                            opts=dict(title="loss",
+                                    xlabel="lr",
+                                    ylabel="loss",
+                                    xtype="log",
+                                    ytype="log"))
+                vis.line(np.array(ep_loss_re), np.array(ep_lr),
+                            win="logloss_lr", update='append', name="reconstruction loss")
+                vis.line(np.array(ep_loss_sim), np.array(ep_lr),
+                            win="logloss_lr", update='append', name="similarity loss")
+
+
+def find_lr(pars, lr0, lr1, n_epochs, criterion=None, optimizer=None, vis=None):
+    # print(pars)
+
+    pars.train_unsupervised = True
+
+    data = get_data(pars.datapath, pars.dataset, num_train=500000)
+
+    for rep in range(pars.repeat):
+        print("\nRep {}".format(rep+1))
+
+        net, classifier, head = setup_net(pars)
+        if pars.loadnet:
+            net.load_state_dict(pars.loadnet)
+        print(net)
+        print(classifier)
+        print(head)
+
+        head_loss = []
+
+        fix = nn.Sequential()
+        model = nn.Sequential(
+            net,
+            head)
+        pars.train_unsupervised = True
+
+        find_lr_model(data, fix, model, pars, head_loss, lr0, lr1, n_epochs, criterion, optimizer, vis)
+
+
+
+def find_lr_model(data, fix, model, pars, ep_loss, lr0, lr1, n_epochs, criterion=None, optimizer=None, vis=None):
+
+    device = pars.device
+    dtype = torch.float32
+    train_dat = data[0]
+    train_tar = data[1]
+
+    print(fix)
+    print(model)
+
+    fix = fix.to(device=device)
+    model = model.to(device=device)  # move the model parameters to CPU/GPU
+
+    lr = lr0
+    if not criterion:
+        criterion = SimCLRLoss(pars.batch_size, pars.device)
+    params = list(fix.parameters())+list(model.parameters())
+    print(criterion)
+
+    if not optimizer:
+        optimizer = torch.optim.Adam(params, lr=lr)
+    print(optimizer)
+
+    if pars.train_unsupervised:
+        n_epochs = pars.epochs
+    else:
+        n_epochs = pars.clf_epochs
+
+    ep_lr = []
+
+    with torch.autograd.set_detect_anomaly(True):
+        for e in range(n_epochs):
+            running_loss = 0
+            start_time = time.time()
+
+            for j in np.arange(0, len(train_tar), pars.batch_size):
+                lr = proposed_lr(lr0, lr1, e + j / len(train_tar), n_epochs)
+                optimizer.param_groups[0]['lr'] = lr
+                model.train()  # put model to training mode
+                # move to device, e.g. GPU
+                x = torch.from_numpy(
+                    train_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
+
+                img = x * 0.5 + 0.5
+
+                transform1 = get_BYOL_transforms(True)
+                transform2 = get_BYOL_transforms(False)
+                x1 = transform1(img)
+                x2 = transform2(img)
+
+                x = torch.cat((x1, x2), dim=0)
+
+
+                with torch.no_grad():
+                    x_new = fix(x)
+                scores = model(x_new)
+
+                loss = criterion(scores)
+
+                running_loss += loss.item()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            end_time = time.time()-start_time
+            running_loss /= (len(train_tar)/pars.batch_size)
+            ep_loss.append(running_loss)
+            ep_lr.append(optimizer.param_groups[0]['lr'])
+
+            print('Epoch %d, loss = %.4f, time: %0.4f' %
+                    (e, running_loss, end_time))
+
+            if vis is not None and e % 5 == 4:
+                vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
+                         opts=dict(title="lr",
+                                   xlabel="epochs",
+                                   ylabel="lr"))
+                vis.line(np.array(ep_loss), np.array(ep_lr),  win="loss_lr", name="loss",
+                         opts=dict(title="loss",
+                                   xlabel="lr",
+                                   ylabel="loss",
+                                   xtype="log"))
+                vis.line(np.array(ep_loss), np.array(ep_lr),  win="logloss_lr", name="loss",
+                         opts=dict(title="loss",
+                                   xlabel="lr",
+                                   ylabel="loss",
+                                   xtype="log",
+                                   ytype="log"))
