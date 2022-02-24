@@ -72,7 +72,7 @@ def get_data(datapath, dataset, num_train):
     return train_dat[:num_train], train_tar[:num_train], train_dat[num_train:], train_tar[num_train:], test_dat, test_tar
 
 
-def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimizer = None, vis=None):
+def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimizer = None, vis=None, cosine_annealing = False):
 
     device = pars.device
     dtype = torch.float32
@@ -102,12 +102,17 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
 
     if not optimizer:
         optimizer = torch.optim.Adam(params, lr=lr)
+    if cosine_annealing:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=50)
     print(optimizer)
 
     if pars.train_unsupervised:
         n_epochs = pars.epochs
     else:
         n_epochs = pars.clf_epochs
+
+    ep_lr = []
 
     with torch.autograd.set_detect_anomaly(True):
         for e in range(n_epochs):
@@ -146,10 +151,14 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                if cosine_annealing:
+                    scheduler.step(e + j / len(train_tar))
 
             end_time = time.time()-start_time
             running_loss /= (len(train_tar)/pars.batch_size)
             ep_loss.append(running_loss)
+            ep_lr.append(optimizer.param_groups[0]['lr'])
+            
             if pars.train_unsupervised:
                 print('Epoch %d, loss = %.4f, time: %0.4f' %
                       (e, running_loss, end_time))
@@ -164,7 +173,10 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                     s = ""
                 else:
                     s = "clf "
-
+                vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win=s+"lr", name="lr",
+                             opts=dict(title=s+"lr",
+                                       xlabel="epochs",
+                                       ylabel="lr"))
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win=s+"loss", name="loss",
                         opts=dict(title=s+"loss",
                                 xlabel="epochs",
@@ -183,7 +195,7 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
             #     model.state_dict(), expdir +'epochs_{}.pt'.format(e)
             # )
 
-def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, criterion_sim=None, optimizer = None, vis=None, print_image = False):
+def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, criterion_sim=None, optimizer = None, vis=None, print_image = False, cosine_annealing = False):
 
     device = pars.device
     dtype = torch.float32
@@ -212,12 +224,15 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
 
     if not optimizer:
         optimizer = torch.optim.Adam(params, lr=lr)
+    if cosine_annealing:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50)
     print(optimizer)
 
     n_epochs = pars.epochs
 
     ep_loss_re = []
     ep_loss_sim = []
+    ep_lr = []
 
     with torch.autograd.set_detect_anomaly(True):
         for e in range(n_epochs):
@@ -259,6 +274,8 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                if cosine_annealing:
+                    scheduler.step(e + j / len(train_tar))
 
             end_time = time.time()-start_time
             running_loss /= (len(train_tar)/pars.batch_size)
@@ -267,6 +284,8 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
             ep_loss.append(running_loss)
             ep_loss_re.append(running_loss_re)
             ep_loss_sim.append(running_loss_sim)
+
+            ep_lr.append(optimizer.param_groups[0]['lr'])
 
             print('Epoch %d, loss = %.4f, time: %0.4f' %
                     (e, running_loss, end_time))
@@ -287,6 +306,10 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                     plt.show()
                 
                 if vis is not None:
+                    vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
+                             opts=dict(title="lr",
+                                       xlabel="epochs",
+                                       ylabel="lr"))
                     vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
                             opts=dict(title="loss",
                                     xlabel="epochs",
@@ -330,7 +353,8 @@ def check_accuracy(dat, tar, fix, model, pars):
         #print('Got %d / %d correct (%.2f)' % (num_correct, num_samples, 100 * acc))
     return acc
 
-def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None, vis=None):
+
+def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None, vis=None, cosine_annealing=False):
     # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/"+pars.loss+"/"
@@ -377,13 +401,13 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
             head)
         pars.train_unsupervised = True
  
-        train_model(data, fix, model, pars, head_loss, None, criterion, optimizer,vis)
+        train_model(data, fix, model, pars, head_loss, None, criterion, optimizer,vis,cosine_annealing)
 
         print('Train Classifier')
         pars.train_unsupervised = False
         print(net)
         print(classifier)
-        train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis)
+        train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis, False)
         test_acc = check_accuracy(
             clf_data[4], clf_data[5], net, classifier, pars)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
@@ -410,7 +434,7 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
     np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
 
 
-def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, optimizer=None, vis=None, print_image=False):
+def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, optimizer=None, vis=None, print_image=False,  cosine_annealing=False):
     # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/AE/"
@@ -458,14 +482,14 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
             head)
         pars.train_unsupervised = True
 
-        train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, vis, print_image)
+        train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, vis, print_image,cosine_annealing)
 
         print('Train Classifier')
         pars.train_unsupervised = False
         print(net)
         print(classifier)
         train_model(clf_data, net, classifier, pars, val_loss,
-                    val_acc, clf_criterion, optimizer, vis)
+                    val_acc, clf_criterion, optimizer, vis, False)
         test_acc = check_accuracy(
             clf_data[4], clf_data[5], net, classifier, pars)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
