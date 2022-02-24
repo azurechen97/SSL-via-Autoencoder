@@ -515,7 +515,7 @@ def proposed_lr(lr0, lr1, i, epochs):
     return lr0*(lr1/lr0)**(i/epochs)
 
 
-def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, reduction="mean", vis=None):
+def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
     # print(pars)
 
     pars.train_unsupervised = True
@@ -543,9 +543,9 @@ def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, 
             head)
         pars.train_unsupervised = True
 
-        find_lr_model_ae(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, reduction, vis)
+        find_lr_model_ae(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, vis)
 
-def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, reduction="mean", vis=None):
+def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
 
     device = pars.device
     dtype = torch.float32
@@ -562,9 +562,9 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
 
     lr = lr0
     if not criterion_re:
-        criterion_re = nn.MSELoss(reduction=reduction)
+        criterion_re = nn.MSELoss()
     if not criterion_sim:
-        criterion_sim = TwinMSELoss(pars.batch_size, pars.device, reduction=reduction)
+        criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
     params = list(fix.parameters())+list(model.parameters()) + \
         list(decoder.parameters())
     if pars.lam == -1:
