@@ -513,3 +513,157 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
     for acc in test_acc_all:
         print(acc)
     np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
+
+
+def find_lr(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
+    # print(pars)
+
+    pars.train_unsupervised = True
+
+    dtype = torch.float32
+
+    data = get_data(pars.datapath, pars.dataset, num_train=500000)
+
+    test_acc_all = []
+    for rep in range(pars.repeat):
+        print("\nRep {}".format(rep+1))
+
+        net, classifier, head = setup_net(pars)
+        decoder = setup_decoder(pars)
+        if pars.loadnet:
+            net.load_state_dict(pars.loadnet)
+
+        print(net)
+        print(classifier)
+        print(head)
+        print(decoder)
+
+        head_loss = []
+
+        fix = nn.Sequential()
+        model = nn.Sequential(
+            net,
+            head)
+        pars.train_unsupervised = True
+
+        find_lr_model(data, fix, model, decoder, pars, head_loss, lr0, lr1, n_epochs,  criterion_re, criterion_sim, optimizer, vis)
+
+
+def proposed_lr(lr0, lr1, i, epochs):
+    return lr0*(lr1/lr0)**(-i/epochs)
+
+def find_lr_model(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, optimizer=None, vis=None):
+
+    device = pars.device
+    dtype = torch.float32
+    train_dat = data[0]
+    train_tar = data[1]
+
+    print(fix)
+    print(model)
+    print(decoder)
+
+    fix = fix.to(device=device)
+    model = model.to(device=device)  # move the model parameters to CPU/GPU
+    decoder = decoder.to(device=device)
+
+    lr = lr0
+    if not criterion_re:
+        criterion_re = nn.MSELoss()
+    if not criterion_sim:
+        criterion_sim = TwinMSELoss(pars.batch_size, pars.device)
+    params = list(fix.parameters())+list(model.parameters()) + \
+        list(decoder.parameters())
+
+    print(criterion_re)
+    print(criterion_sim)
+
+    if not optimizer:
+        optimizer = torch.optim.Adam(params, lr=lr)
+    print(optimizer)
+
+    ep_loss_re = []
+    ep_loss_sim = []
+    ep_lr = []
+
+    with torch.autograd.set_detect_anomaly(True):
+        for e in range(n_epochs):
+            running_loss = 0
+            running_loss_re = 0
+            running_loss_sim = 0
+            start_time = time.time()
+
+            for j in np.arange(0, len(train_tar), pars.batch_size):
+                lr = proposed_lr(lr0, lr1, e + j / len(train_tar), n_epochs)
+                optimizer.param_groups[0]['lr'] = lr
+
+                model.train()  # put model to training mode
+                decoder.train()
+                # move to device, e.g. GPU
+                x = torch.from_numpy(
+                    train_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
+
+                img = x * 0.5 + 0.5
+
+                transform1 = get_BYOL_transforms(True)
+                transform2 = get_BYOL_transforms(False)
+                x1 = transform1(img)
+                x2 = transform2(img)
+
+                x = torch.cat((x1, x2), dim=0)
+
+                with torch.no_grad():
+                    x_new = fix(x)
+                scores = model(x_new)
+                x_re = decoder(scores)
+
+                loss_re = criterion_re(x_re, x_new)
+                loss_sim = criterion_sim(scores)
+
+                loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
+                # loss = loss_sim
+
+                running_loss += loss.item()
+                running_loss_re += loss_re.item()
+                running_loss_sim += loss_sim.item()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            end_time = time.time()-start_time
+            running_loss /= (len(train_tar)/pars.batch_size)
+            running_loss_re /= (len(train_tar)/pars.batch_size)
+            running_loss_sim /= (len(train_tar)/pars.batch_size)
+            ep_loss.append(running_loss)
+            ep_loss_re.append(running_loss_re)
+            ep_loss_sim.append(running_loss_sim)
+
+            ep_lr.append(optimizer.param_groups[0]['lr'])
+
+            print('Epoch %d, loss = %.4f, time: %0.4f' %
+                  (e, running_loss, end_time))
+            print('reconstruction loss = %.4f, similarity loss: %0.4f' %
+                  (running_loss_re, running_loss_sim))
+            if e % 5 == 4:
+                if vis is not None:
+                    vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
+                             opts=dict(title="lr",
+                                       xlabel="epochs",
+                                       ylabel="lr"))
+                    vis.line(np.array(ep_loss), np.array(ep_lr),  win="loss_lr", name="loss",
+                             opts=dict(title="loss",
+                                       xlabel="lr",
+                                       ylabel="loss",
+                                       xtype="log"))
+                    vis.line(np.array(ep_loss_re), np.array(ep_lr),
+                             win="loss_lr", update='append', name="reconstruction loss")
+                    vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
+                             win="loss_lr", update='append', name="similarity loss")
+                    vvis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
+                              opts=dict(title="loss",
+                                        xlabel="epochs",
+                                        ylabel="loss"))
+                    vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),
+                             win="loss", update='append', name="reconstruction loss")
+                    vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
+                             win="loss", update='append', name="similarity loss")
