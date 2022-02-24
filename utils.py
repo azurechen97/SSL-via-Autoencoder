@@ -166,10 +166,14 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                     s = ""
                 else:
                     s = "clf "
-                vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win=s+"lr", name="lr",
-                             opts=dict(title=s+"lr",
+                    vis.line(np.array(ep_acc), np.arange(len(ep_acc)),  win="val acc", name="acc",
+                             opts=dict(title="val acc",
                                        xlabel="epochs",
-                                       ylabel="lr"))
+                                       ylabel="acc"))
+                # vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win=s+"lr", name="lr",
+                #              opts=dict(title=s+"lr",
+                #                        xlabel="epochs",
+                #                        ylabel="lr"))
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win=s+"loss", name="loss",
                         opts=dict(title=s+"loss",
                                 xlabel="epochs",
@@ -256,7 +260,12 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 loss_re = criterion_re(x_re,x_new)
                 loss_sim = criterion_sim(scores)
                 
-                loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
+                if pars.lam == -1: # multi-task loss
+                    sigma = nn.Parameter(torch.ones(2))
+                    loss = 0.5 * torch.Tensor([loss_re,loss_sim])/sigma**2
+                    loss = loss.sum() + torch.log(sigma).sum()
+                else:
+                    loss= (1-pars.lam)*loss_sim+pars.lam*loss_re
                 # loss = loss_sim
 
                 running_loss += loss.item()
@@ -280,12 +289,14 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                     (e, running_loss, end_time))
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                     (running_loss_re, running_loss_sim))
+            if pars.lam == -1:
+                print(sigma.item())
             if vis is not None and e % 5 == 4:
                 ind = np.random.choice(pars.batch_size)
-                vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
-                            opts=dict(title="lr",
-                                    xlabel="epochs",
-                                    ylabel="lr"))
+                # vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
+                #             opts=dict(title="lr",
+                #                     xlabel="epochs",
+                #                     ylabel="lr"))
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
                         opts=dict(title="loss",
                                 xlabel="epochs",
@@ -301,13 +312,16 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                         update='append', name="reconstruction loss")
                 vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),
                         win="loss (log)", update='append', name="similarity loss")
-                vis.image(x_new[ind, :, :, :], win="ori 1", opts=dict(caption="original image 1", store_history=True))
+
+                vis.image(img[ind, :, :, :], win="original", opts=dict(
+                    caption="original image", store_history=True))
+                vis.image(x_new[ind, :, :, :], win="img 1", opts=dict(caption="distorted image 1", store_history=True))
                 vis.image(x_re[ind, :, :, :],
-                        win="recon 1", opts=dict(caption="reconstructed image 1", store_history=True))
-                vis.image(x_new[ind+pars.batch_size, :, :, :], win="ori 2", opts=dict(
-                    caption="original image 2", store_history=True))
+                        win="rec 1", opts=dict(caption="reconstructed image 1", store_history=True))
+                vis.image(x_new[ind+pars.batch_size, :, :, :], win="img 2", opts=dict(
+                    caption="distorted image 2", store_history=True))
                 vis.image(x_re[ind+pars.batch_size, :, :, :],
-                          win="recon 2", opts=dict(caption="reconstructed image 2", store_history=True))
+                          win="rec 2", opts=dict(caption="reconstructed image 2", store_history=True))
             
 
 def check_accuracy(dat, tar, fix, model, pars):
@@ -596,8 +610,12 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
                 loss_re = criterion_re(x_re, x_new)
                 loss_sim = criterion_sim(scores)
 
-                loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
-                # loss = loss_sim
+                if pars.lam == -1:  # multi-task loss
+                    sigma = nn.Parameter(torch.ones(2))
+                    loss = 0.5 * torch.Tensor([loss_re, loss_sim])/sigma**2
+                    loss = loss.sum() + torch.log(sigma).sum()
+                else:
+                    loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
 
                 running_loss += loss.item()
                 running_loss_re += loss_re.item()
@@ -620,6 +638,8 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
                   (e, running_loss, end_time))
             print('reconstruction loss = %.4f, similarity loss: %0.4f' %
                   (running_loss_re, running_loss_sim))
+            if pars.lam == -1:
+                print(sigma.item())
             if vis is not None and e % 5 == 4:
                 vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
                             opts=dict(title="lr",
