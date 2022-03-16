@@ -1,5 +1,5 @@
 class PARS:
-    def __init__(self, device, datapath, savepath, architecture='CONV', nonlinear='hardtanh', batchsize=500, headsize=64, dataset='Cifar100', loss='SimCLR', optimizer='Adam', lr=0.0001, epochs=800,clf_dataset='Cifar10', clf_loss='CE', clf_opt='Adam', clf_lr=0.0002, clf_epochs=400,repeat=5, loadnet=None, loadclf=None, lam=0.5, auxnonlinear=None):
+    def __init__(self, device, datapath, savepath, architecture='CONV', nonlinear='hardtanh', batchsize=500, headsize=64, dataset='Cifar100', loss='SimCLR', optimizer='Adam', lr=0.0001, epochs=800,clf_dataset='Cifar10', clf_loss='CE', clf_opt='Adam', clf_lr=0.0002, clf_epochs=400,repeat=5, loadnet=False, loadclf=False, lam=1, clfnonlinear=None, headnonlinear=None):
         self.architecture = architecture  # 'LW', 'CONV'
         self.nonlinear = nonlinear  # 'hartanh','tanh', 'relu'
         self.batch_size = batchsize
@@ -26,13 +26,15 @@ class PARS:
         self.loadclf = loadclf
 
         self.lam = lam
-        self.auxnonlinear = auxnonlinear
+        self.clfnonlinear = clfnonlinear
+        self.headnonlinear = headnonlinear
 
     def __str__(self):
         res = ""
         for key, val in self.__dict__.items():
-            if (key != 'loadnet') and (key != 'loadclf'):
-                res += "{}: {}\n".format(key, val)
-            else:
-                res += "{}: {}\n".format(key, val.keys() if val else val)
+            res += "{}: {}\n".format(key, val)
+            # if (key != 'loadnet') and (key != 'loadclf'):
+            #     res += "{}: {}\n".format(key, val)
+            # else:
+            #     res += "{}: {}\n".format(key, val.keys() if val else val)
         return res

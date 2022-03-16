@@ -56,13 +56,14 @@ def setup_net(pars):
     )
     auxhead.add_module('fc', nn.Linear(
         int(NUM_CHANNEL*HW*HW), pars.headsize))
-    if pars.auxnonlinear == 'tanh':
-        auxhead.add_module('activation', nn.Tanh())
 
     classifier.add_module('aux', aux)
+    if pars.clfnonlinear == 'softmax':
+        classifier.add_module('softmax', nn.Softmax())
 
     head.add_module('auxhead', auxhead)
-
+    if pars.headnonlinear == 'tanh':
+        head.add_module('activation', nn.Tanh())
 
     return net, classifier, head
 

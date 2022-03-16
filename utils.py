@@ -12,6 +12,7 @@ from loss import *
 
 import matplotlib.pyplot as plt
 
+import sklearn
 
 def get_BYOL_transforms(is_first=True):
     transforms = torch.nn.Sequential(
@@ -108,6 +109,8 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
         n_epochs = pars.clf_epochs
 
     ep_lr = []
+    if not pars.train_unsupervised:
+        ep_val_loss = []
 
     with torch.autograd.set_detect_anomaly(True):
         for e in range(n_epochs):
@@ -151,14 +154,31 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
             running_loss /= (len(train_tar)/pars.batch_size)
             ep_loss.append(running_loss)
             ep_lr.append(optimizer.param_groups[0]['lr'])
+
+            if not pars.train_unsupervised:
+                val_running_loss = 0
+                with torch.no_grad():
+                    for j in np.arange(0, len(val_tar), pars.batch_size):
+                        # move to device, e.g. GPU
+                        val_x = torch.from_numpy(
+                            val_dat[j:j+pars.batch_size]).to(device=device, dtype=torch.float32)
+                        val_y = torch.from_numpy(
+                            val_tar[j:j+pars.batch_size]).to(device=device, dtype=torch.long)
+                        val_x_new = fix(val_x)
+                        val_scores = model(val_x_new)
+                        val_loss = criterion(val_scores, val_y)
+                        val_running_loss += val_loss.item()
+
+                    val_running_loss /= (len(val_tar)/pars.batch_size)
+                    ep_val_loss.append(val_running_loss)
             
             if pars.train_unsupervised:
                 print('Epoch %d, loss = %.4f, time: %0.4f' %
                       (e, running_loss, end_time))
             else:
                 acc = check_accuracy(val_dat, val_tar, fix, model, pars)
-                print('Epoch %d, loss = %.4f, val.acc = %.4f' %
-                      (e, running_loss, acc))
+                print('Epoch %d, loss = %.4f, val.loss = %.4f, val.acc = %.4f' %
+                      (e, running_loss, val_running_loss, acc))
                 ep_acc.append(acc)
             
             if vis is not None and e % 5 == 4:
@@ -170,19 +190,21 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
                              opts=dict(title="val acc",
                                        xlabel="epochs",
                                        ylabel="acc"))
-                # vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win=s+"lr", name="lr",
-                #              opts=dict(title=s+"lr",
-                #                        xlabel="epochs",
-                #                        ylabel="lr"))
+
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win=s+"loss", name="loss",
                         opts=dict(title=s+"loss",
                                 xlabel="epochs",
                                 ylabel="loss"))
+                if not pars.train_unsupervised:
+                    vis.line(np.array(ep_val_loss), np.arange(len(ep_val_loss)),  win=s+"loss", update='append', name="val loss")
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win=s+"loss (log)", name="loss",
                         opts=dict(title=s+"loss (log)",
                                 xlabel="epochs",
                                 ylabel="loss",
                                 ytype="log"))
+                if not pars.train_unsupervised:
+                    vis.line(np.array(ep_val_loss), np.arange(
+                        len(ep_val_loss)),  win=s+"loss (log)", update='append', name="val loss")
 
 
             # expdir =pars.savepath + "checkpoint/"
@@ -267,7 +289,8 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 if pars.lam == -1: # multi-task loss
                     loss = criterion_mtl(loss_re, loss_sim)
                 else:
-                    loss= (1-pars.lam)*loss_sim+pars.lam*loss_re
+                    # loss= (1-pars.lam)*loss_sim+pars.lam*loss_re
+                    loss= loss_sim+pars.lam*loss_re
                 # loss = loss_sim
 
                 running_loss += loss.item()
@@ -295,16 +318,14 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                 print(list(criterion_mtl.parameters())[0])
             if vis is not None and e % 5 == 4:
                 ind = np.random.choice(pars.batch_size)
-                # vis.line(np.array(ep_lr), np.arange(len(ep_lr)),  win="lr", name="lr",
-                #             opts=dict(title="lr",
-                #                     xlabel="epochs",
-                #                     ylabel="lr"))
+
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss", name="loss",
                         opts=dict(title="loss",
                                 xlabel="epochs",
                                 ylabel="loss"))
                 vis.line(np.array(ep_loss_re), np.arange(len(ep_loss)),  win="loss", update='append', name="reconstruction loss")
                 vis.line(np.array(ep_loss_sim), np.arange(len(ep_loss)),  win="loss", update='append', name="similarity loss")
+
                 vis.line(np.array(ep_loss), np.arange(len(ep_loss)),  win="loss (log)", name="loss",
                         opts=dict(title="loss (log)",
                                 xlabel="epochs",
@@ -324,7 +345,56 @@ def train_model_ae(data, fix, model, decoder, pars, ep_loss, criterion_re=None, 
                     caption="distorted image 2", store_history=True))
                 vis.image(x_re[ind+pars.batch_size, :, :, :],
                           win="rec 2", opts=dict(caption="reconstructed image 2", store_history=True))
-            
+
+
+def train_model_logistic(data, fix, model, pars):
+
+    device = pars.device
+    dtype = torch.float32
+    train_dat = data[0]
+    train_tar = data[1]
+    val_dat = data[2]
+    val_tar = data[3]
+
+    print(fix)
+    print(model)
+
+    fix = fix.to(device=device)
+    # model = model.to(device=device)  # move the model parameters to CPU/GPU
+
+    for j in np.arange(0, len(train_tar), pars.batch_size):
+        x = torch.from_numpy(
+            train_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
+        with torch.no_grad():
+            x1_tensor = fix(x)
+        x1_tensor = x1_tensor.flatten(start_dim=1).cpu()
+        if j == 0:
+            x1 = x1_tensor.detach().numpy()
+        else:
+            x1 = np.concatenate([x1, x1_tensor.detach().numpy()])
+    y = train_tar
+
+    model.fit(x1, y)
+    scores = model.decision_function(x1)
+
+    loss = sklearn.metrics.log_loss(y, scores)
+
+    for j in np.arange(0, len(val_tar), pars.batch_size):
+        val_x = torch.from_numpy(
+            val_dat[j:j+pars.batch_size]).to(device=device, dtype=dtype)
+        with torch.no_grad():
+            val_x1_tensor = fix(val_x)
+        val_x1_tensor = val_x1_tensor.flatten(start_dim=1).cpu()
+        if j == 0:
+            val_x1 = val_x1_tensor.detach().numpy()
+        else:
+            val_x1 = np.concatenate([val_x1, val_x1_tensor.detach().numpy()])
+
+    val_pred = model.predict(val_x1)
+    acc = sklearn.metrics.accuracy_score(val_tar, val_pred)
+    print('loss = %.4f, val.acc = %.4f' % (loss, acc))
+
+    return loss, acc
 
 def check_accuracy(dat, tar, fix, model, pars):
 
@@ -350,14 +420,35 @@ def check_accuracy(dat, tar, fix, model, pars):
     return acc
 
 
-def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None, vis=None):
+def check_accuracy_logistic(dat, tar, fix, model, pars):
+
+    device = pars.device
+
+    for j in np.arange(0, len(tar), pars.batch_size):
+        x = torch.from_numpy(
+            dat[j:j+pars.batch_size]).to(device=device, dtype=torch.float32)
+        with torch.no_grad():
+            x1_tensor = fix(x)
+        x1_tensor = x1_tensor.flatten(start_dim=1).cpu()
+        if j == 0:
+            x1 = x1_tensor.detach().numpy()
+        else:
+            x1 = np.concatenate([x1, x1_tensor.detach().numpy()])
+
+    pred = model.predict(x1)
+    acc = sklearn.metrics.accuracy_score(tar, pred)
+
+    return acc
+
+def train_unsupervised(pars, criterion=None, clf_criterion=None, sklearn_classifier=None, optimizer=None, vis=None):
     # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/"+pars.loss+"/"
-    EXP_NAME = '{}_{}_{}_LR_{}_Epochs_{}_CLF_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs,
-        pars.clf_dataset, pars.clf_opt, pars.clf_lr, pars.clf_epochs)
+    EXP_NAME_NET = '{}_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs)
     if pars.loss == 'BarlowTwins':
-        EXP_NAME += '_lam_'+str(pars.lam)
+        EXP_NAME_NET += '_lam_'+str(pars.lam)
+    EXP_NAME = EXP_NAME_NET+'_CLF_{}_{}_LR_{}_Epochs_{}'.format(
+        pars.clf_dataset, pars.clf_opt, pars.clf_lr, pars.clf_epochs)
     
     if not os.path.exists(expdir):
         os.makedirs(expdir)
@@ -377,13 +468,23 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
         print("\nRep {}".format(rep+1))
 
         net, classifier, head = setup_net(pars)
+
+        net_name = expdir + 'net_rep_{}_'.format(rep+1) + EXP_NAME_NET + '.pt'
+        clf_name = expdir + 'clf_rep_{}_'.format(rep+1) + EXP_NAME + '.pt'
+        if not os.path.isfile(net_name):
+            pars.loadnet = False
+        if not os.path.isfile(clf_name):
+            pars.loadclf = False
         if pars.loadnet:
-            net.load_state_dict(pars.loadnet)
+            net.load_state_dict(torch.load(net_name))
+            print(net_name, "loaded")
         if pars.loadclf:
-            classifier.load_state_dict(pars.loadclf)
-        print(net)
-        print(classifier)
-        print(head)
+            classifier.load_state_dict(torch.load(clf_name))
+            print(clf_name, "loaded")
+
+        # print(net)
+        # print(classifier)
+        # print(head)
 
         val_loss = []
         val_acc = []
@@ -396,31 +497,39 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
             net,
             head)
         pars.train_unsupervised = True
- 
-        train_model(data, fix, model, pars, head_loss, None, criterion, optimizer,vis)
 
-        print('Train Classifier')
+        if not pars.loadnet:
+            print('Train Net')
+            train_model(data, fix, model, pars, head_loss, None, criterion, optimizer,vis)
+
         pars.train_unsupervised = False
-        print(net)
-        print(classifier)
-        train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis)
-        test_acc = check_accuracy(
-            clf_data[4], clf_data[5], net, classifier, pars)
+        # print(net)
+        if not sklearn_classifier:
+            # print(classifier)
+            if not pars.loadclf:
+                print('Train Classifier')
+                train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis)
+            test_acc = check_accuracy(
+                clf_data[4], clf_data[5], net, classifier, pars)
+        else:
+            print(sklearn_classifier)
+            train_model_logistic(clf_data, net, sklearn_classifier, pars)
+            test_acc = check_accuracy_logistic(
+                clf_data[4], clf_data[5], net, sklearn_classifier, pars)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
         lw_test_acc.append(test_acc)
         
 
         np.save(expdir+'head_loss_rep_{}_'.format(rep+1) +
-                EXP_NAME, head_loss)
+                EXP_NAME_NET, head_loss)
         np.save(expdir+'loss_rep_{}_'.format(rep+1) + EXP_NAME, val_loss)
         np.save(expdir+'val.acc_rep_{}_'.format(rep+1) + EXP_NAME, val_acc)
         np.save(expdir+'te.acc_rep_{}_'.format(rep+1) + EXP_NAME, lw_test_acc)
 
-        if pars.epochs:
-            torch.save(net.state_dict(), expdir +
-                       'net_rep_{}_'.format(rep+1) + EXP_NAME + '.pt')
-        torch.save(classifier.state_dict(), expdir +
-                   'clf_rep_{}_'.format(rep+1) + EXP_NAME + '.pt', )
+        if pars.epochs and not pars.loadnet:
+            torch.save(net.state_dict(), net_name)
+        if not sklearn_classifier and not pars.loadclf:
+            torch.save(classifier.state_dict(), clf_name)
 
         test_acc_all.append(lw_test_acc)
 
@@ -430,13 +539,15 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, optimizer=None,
     np.save(expdir+'te.acc.all_' + EXP_NAME, test_acc_all)
 
 
-def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, optimizer=None, vis=None):
+def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, sklearn_classifier=None, optimizer=None, vis=None):
     # print(pars)
 
     expdir = pars.savepath+pars.architecture+"/AE/"
-    EXP_NAME = '{}_{}_{}_LR_{}_Epochs_{}_CLF_{}_{}_LR_{}_Epochs_{}'.format(pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs,
+    EXP_NAME_NET = '{}_{}_{}_LR_{}_Epochs_{}'.format(
+        pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs)
+    EXP_NAME_NET += '_lam_'+str(pars.lam)
+    EXP_NAME = EXP_NAME_NET+'_CLF_{}_{}_LR_{}_Epochs_{}'.format(
         pars.clf_dataset, pars.clf_opt, pars.clf_lr, pars.clf_epochs)
-    EXP_NAME += '_lam_'+str(pars.lam)
 
     if not os.path.exists(expdir):
         os.makedirs(expdir)
@@ -457,14 +568,23 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
 
         net, classifier, head = setup_net(pars)
         decoder = setup_decoder(pars)
+
+        net_name = expdir + 'net_rep_{}_'.format(rep+1) + EXP_NAME_NET + '.pt'
+        clf_name = expdir + 'clf_rep_{}_'.format(rep+1) + EXP_NAME + '.pt'
+        if not os.path.isfile(net_name):
+            pars.loadnet = False
+        if not os.path.isfile(clf_name):
+            pars.loadclf = False
         if pars.loadnet:
-            net.load_state_dict(pars.loadnet)
+            net.load_state_dict(torch.load(net_name))
+            print(net_name, "loaded")
         if pars.loadclf:
-            classifier.load_state_dict(pars.loadclf)
-        print(net)
-        print(classifier)
-        print(head)
-        print(decoder)
+            classifier.load_state_dict(torch.load(clf_name))
+            print(clf_name, "loaded")
+        # print(net)
+        # print(classifier)
+        # print(head)
+        # print(decoder)
 
         val_loss = []
         val_acc = []
@@ -478,30 +598,37 @@ def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_crite
             head)
         pars.train_unsupervised = True
 
-        train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, vis)
+        if not pars.loadnet:
+            print('Train Net')
+            train_model_ae(data, fix, model, decoder, pars, head_loss, criterion_re, criterion_sim, optimizer, vis)
 
-        print('Train Classifier')
         pars.train_unsupervised = False
-        print(net)
-        print(classifier)
-        train_model(clf_data, net, classifier, pars, val_loss,
-                    val_acc, clf_criterion, optimizer, vis)
-        test_acc = check_accuracy(
-            clf_data[4], clf_data[5], net, classifier, pars)
+        # print(net)
+        if not sklearn_classifier:
+            # print(classifier)
+            if not pars.loadclf:
+                print('Train Classifier')
+                train_model(clf_data, net, classifier, pars, val_loss, val_acc, clf_criterion, optimizer, vis)
+            test_acc = check_accuracy(
+                clf_data[4], clf_data[5], net, classifier, pars)
+        else:
+            print(sklearn_classifier)
+            train_model_logistic(clf_data, net, sklearn_classifier, pars)
+            test_acc = check_accuracy_logistic(
+                clf_data[4], clf_data[5], net, sklearn_classifier, pars)
         print('Rep: %d, te.acc = %.4f' % (rep+1, test_acc))
         lw_test_acc.append(test_acc)
 
         np.save(expdir+'head_loss_rep_{}_'.format(rep+1) +
-                EXP_NAME, head_loss)
+                EXP_NAME_NET, head_loss)
         np.save(expdir+'loss_rep_{}_'.format(rep+1) + EXP_NAME, val_loss)
         np.save(expdir+'val.acc_rep_{}_'.format(rep+1) + EXP_NAME, val_acc)
         np.save(expdir+'te.acc_rep_{}_'.format(rep+1) + EXP_NAME, lw_test_acc)
 
-        if pars.epochs:
-            torch.save(net.state_dict(), expdir +
-                       'net_rep_{}_'.format(rep+1) + EXP_NAME + '.pt')
-        torch.save(classifier.state_dict(), expdir +
-                   'clf_rep_{}_'.format(rep+1) + EXP_NAME + '.pt', )
+        if pars.epochs and not pars.loadnet:
+            torch.save(net.state_dict(), net_name)
+        if not sklearn_classifier and not pars.loadclf:
+            torch.save(classifier.state_dict(), clf_name)
 
         test_acc_all.append(lw_test_acc)
 
@@ -530,10 +657,10 @@ def find_lr_ae(pars, lr0, lr1, n_epochs, criterion_re=None, criterion_sim=None, 
         if pars.loadnet:
             net.load_state_dict(pars.loadnet)
 
-        print(net)
-        print(classifier)
-        print(head)
-        print(decoder)
+        # print(net)
+        # print(classifier)
+        # print(head)
+        # print(decoder)
 
         head_loss = []
 
@@ -621,7 +748,7 @@ def find_lr_model_ae(data, fix, model, decoder, pars, ep_loss, lr0, lr1, n_epoch
                 if pars.lam == -1:  # multi-task loss
                     loss = criterion_mtl(loss_re, loss_sim)
                 else:
-                    loss = (1-pars.lam)*loss_sim+pars.lam*loss_re
+                    loss = loss_sim+pars.lam*loss_re
 
                 running_loss += loss.item()
                 running_loss_re += loss_re.item()
@@ -685,9 +812,9 @@ def find_lr(pars, lr0, lr1, n_epochs, criterion=None, optimizer=None, vis=None):
         net, classifier, head = setup_net(pars)
         if pars.loadnet:
             net.load_state_dict(pars.loadnet)
-        print(net)
-        print(classifier)
-        print(head)
+        # print(net)
+        # print(classifier)
+        # print(head)
 
         head_loss = []
 
