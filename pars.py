@@ -1,5 +1,5 @@
 class PARS:
-    def __init__(self, device, datapath, savepath, architecture='CONV', nonlinear='hardtanh', batchsize=500, headsize=64, dataset='Cifar100', loss='SimCLR', optimizer='Adam', lr=0.0001, epochs=800,clf_dataset='Cifar10', clf_loss='CE', clf_opt='Adam', clf_lr=0.0002, clf_epochs=400,repeat=5, loadnet=False, loadclf=False, lam=1, clfnonlinear=None, headnonlinear=None):
+    def __init__(self, device, datapath, savepath, architecture='CONV', nonlinear='hardtanh', batchsize=500, headsize=64, dataset='Cifar100', loss='SimCLR', optimizer='Adam', lr=0.0001, epochs=800,clf_dataset='Cifar10', clf_loss='CE', clf_opt='Adam', clf_lr=0.0002, clf_epochs=400,repeat=5, loadnet=False, loadclf=False, lam=1, decoder_channel=8, clfnonlinear=None, headnonlinear=None):
         self.architecture = architecture  # 'LW', 'CONV'
         self.nonlinear = nonlinear  # 'hartanh','tanh', 'relu'
         self.batch_size = batchsize
@@ -26,6 +26,7 @@ class PARS:
         self.loadclf = loadclf
 
         self.lam = lam
+        self.decoder_channel = decoder_channel
         self.clfnonlinear = clfnonlinear
         self.headnonlinear = headnonlinear
 

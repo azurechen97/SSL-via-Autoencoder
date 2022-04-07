@@ -89,7 +89,11 @@ def train_model(data, fix, model, pars, ep_loss, ep_acc, criterion=None, optimiz
     if pars.train_unsupervised:
         lr = pars.LR
         if not criterion:
-            criterion = SimCLRLoss(pars.batch_size, pars.device)
+            if pars.loss == "BarlowTwins":
+                criterion = BarlowTwinsLoss(
+                    pars.batch_size, pars.lam, pars.device)
+            else:
+                criterion = SimCLRLoss(pars.batch_size, pars.device)
         params = list(fix.parameters())+list(model.parameters())
 
     else:
@@ -542,7 +546,7 @@ def train_unsupervised(pars, criterion=None, clf_criterion=None, sklearn_classif
 def train_unsupervised_ae(pars, criterion_re=None, criterion_sim=None, clf_criterion=None, sklearn_classifier=None, optimizer=None, vis=None):
     # print(pars)
 
-    expdir = pars.savepath+pars.architecture+"/AE/"
+    expdir = pars.savepath+pars.architecture+"/AE/channel_"+str(pars.decoder_channel)+"/"
     EXP_NAME_NET = '{}_{}_{}_LR_{}_Epochs_{}'.format(
         pars.nonlinear, pars.dataset, pars.OPT, pars.LR, pars.epochs)
     EXP_NAME_NET += '_lam_'+str(pars.lam)
@@ -843,7 +847,11 @@ def find_lr_model(data, fix, model, pars, ep_loss, lr0, lr1, n_epochs, criterion
 
     lr = lr0
     if not criterion:
-        criterion = SimCLRLoss(pars.batch_size, pars.device)
+        if pars.loss == "BarlowTwins":
+            criterion = BarlowTwinsLoss(
+                pars.batch_size, pars.lam, pars.device)
+        else:
+            criterion = SimCLRLoss(pars.batch_size, pars.device)
     params = list(fix.parameters())+list(model.parameters())
     print(criterion)
 
