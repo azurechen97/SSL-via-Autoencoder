@@ -76,6 +76,11 @@ def setup_decoder(pars):
         pars.headsize, pars.decoder_channel*32*32))
     auxdecoder.add_module('relu', nn.ReLU())
     auxdecoder.add_module('unflatten', nn.Unflatten(1, (pars.decoder_channel, 32, 32)))
+    if pars.decoder_layer>1:
+        for i in range(pars.decoder_layer-1):
+            auxdecoder.add_module('deconv'+str(i), nn.ConvTranspose2d(
+                pars.decoder_channel, pars.decoder_channel, 3, padding=1))
+            auxdecoder.add_module('relu'+str(i), nn.ReLU())
     auxdecoder.add_module('deconv', nn.ConvTranspose2d(
         pars.decoder_channel, 3, 3, padding=1))
     auxdecoder.add_module('sigmoid', nn.Sigmoid())
